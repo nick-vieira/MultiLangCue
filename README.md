@@ -79,5 +79,5 @@ We discovered that repeating the question twice in the prompt (lines 201-206 of 
 |1|45.07 |47.22|
 |11|45.37	|48.42|
 |42|45.14	|49.25|
-|
+|||
 |Avg|45.19	|48.3|
