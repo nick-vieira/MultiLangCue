@@ -66,7 +66,7 @@ Credit: We build our project on the foundation of [InstructERC](https://github.c
 2. update the model path and adjust training parameters in train_and_inference_Uni.sh
 3. start training
     ```
-    bash train_and_inference_Uni.sh
+    bash train_and_inference.sh
     ```
     The script will first run the ```data_process.py``` script which will process the pickle files from the ```original_data``` folder and create a new folder called ```PROCESSED_DATASET``` to store the inputs for LLMs. It will then run the training script which will create a new folder called ```experiemnts``` to store the training results.
     
