@@ -63,7 +63,7 @@ Credit: We build our project on the foundation of [InstructERC](https://github.c
 
 #### Training
 1. download LLMs from HuggingFace and store them in the LLM_bases folder
-2. update the model path and adjust training parameters in train_and_inference_Uni.sh
+2. update the model path and adjust training parameters in ```train_and_inference.sh```
 3. start training
     ```
     cd LLM_code
