@@ -7,7 +7,7 @@ FLAG=1
 # MODEL_NAME='LLaMA2'
 # MODEL_NAME='LLaMA3'
 # MODEL_NAME='LLaMA3-instruct-70b'
-MODEL_NAME='LLaMA3-instruct'
+MODEL_NAME='Meta-Llama-3-8B-Instruct'
 # MODEL_NAME='Phi3-medium'
 
 # ------ select the experiment ------------
@@ -59,7 +59,7 @@ data_percent=1.0
 
 
 case ${MODEL_NAME} in
-'ChatGLM'|'ChatGLM2'|'LLaMA'|'LLaMA2'|'LLaMA3'|'LLaMA3-instruct'|'LLaMA3-instruct-70b'|'Bloom-560m'|'Phi3-medium')
+'ChatGLM'|'ChatGLM2'|'LLaMA'|'LLaMA2'|'LLaMA3'|'Meta-Llama-3-8B-Instruct'|'LLaMA3-instruct-70b'|'Bloom-560m'|'Phi3-medium')
     case ${Experiments_setting} in
     'zero_shot'|'few_shot'|'lora'|'all_parameters')
         case ${dataset} in
@@ -92,7 +92,7 @@ esac
 
 if [ ${FLAG} = 1 ]
 then
-    DATA_PATH=$(python data_process.py --dataset ${dataset} \
+    DATA_PATH=$(python3 data_process.py --dataset ${dataset} \
         --historical_window ${historical_window} \
         --audio_description ${audio_description} \
         --audio_impression ${audio_impression} \
@@ -138,9 +138,9 @@ then
     elif [ ${MODEL_NAME} = 'LLaMA3' ]
     then
         MODEL_PATH='LLaMA3 MODELPATH'
-    elif [ ${MODEL_NAME} = 'LLaMA3-instruct' ]
+    elif [ ${MODEL_NAME} = 'Meta-Llama-3-8B-Instruct' ]
     then
-        MODEL_PATH='LLaMA3-instruct MODELPATH'
+        MODEL_PATH='meta-llama/Meta-Llama-3-8B-instruct'
     elif [ ${MODEL_NAME} = 'LLaMA3-instruct-70b' ]
     then
         MODEL_PATH='LLaMA3-instruct-70b MODELPATH'
@@ -202,7 +202,7 @@ then
         --batch_size ${BS} \
         --deepspeed_config ../LLM_code/data_utils/deepspeed_config.json \
         --gradient_accumulation_steps ${accumulations} \
-        --eval_batch_size 8 \
+        --eval_batch_size 1 \
         --num_train_epochs ${num_train_epochs} \
         --save_steps 100000 \
         --lora ${LORA}\
@@ -226,7 +226,7 @@ then
         --batch_size ${BS} \
         --deepspeed_config ../LLM_code/data_utils/deepspeed_config.json \
         --gradient_accumulation_steps ${accumulations} \
-        --eval_batch_size 8 \
+        --eval_batch_size 1 \
         --num_train_epochs ${num_train_epochs} \
         --save_steps 100000 \
         --lora ${LORA}\
