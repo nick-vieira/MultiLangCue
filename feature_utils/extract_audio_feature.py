@@ -58,7 +58,7 @@ def extract_audio_features_with_praat(audio_path):
     }
 
 
-# Extract audio features for MELD dataset
+# Extract audio features for MELD/EmoDB dataset
 def process_audio_folder(folder_path, output_csv):
     # List to store results
     results = []
@@ -117,11 +117,52 @@ def process_csv(input_file, output_file):
     result_df.to_csv(output_file, index=False)
     print(f"Results written to {output_file}")
 
+# Emotion mapping based on established naming conventions
+EMODB_LABELS = {
+    'W': 'anger',
+    'L': 'boredom',
+    'E': 'disgust',
+    'A': 'fear',
+    'F': 'happiness',
+    'T': 'sadness',
+    'N': 'neutral'
+}
+
+def extract_emodb_labels(audio_folder=None, results_df=None, output_csv=None):
+    """
+    Extracts filenames and their associated emotion labels from the EmoDB dataset.
+    If a results dataframe is provided, it processes and merges emotion labels.
+    """
+    data = []
+    
+    if audio_folder:
+        for file in os.listdir(audio_folder):
+            if file.endswith('.wav'):
+                emotion_code = file[5]  # The 6th character represents the emotion
+                emotion_label = EMODB_LABELS.get(emotion_code, 'unknown')
+                data.append({'filename': file, 'emotion': emotion_label})
+        
+        df = pd.DataFrame(data)
+    
+    if results_df is not None:
+        if 'filename' in results_df.columns:
+            results_df['emotion'] = results_df['filename'].apply(lambda x: EMODB_LABELS.get(x[5], 'unknown') if isinstance(x, str) and len(x) > 5 else 'unknown')
+            print("Emotion labels successfully added to results dataframe.")
+            return results_df
+        else:
+            raise KeyError("Column 'filename' not found in results dataframe.")
+    
+    if output_csv and data:
+        df.to_csv(output_csv, index=False)
+        print(f'CSV file created successfully at {output_csv}')
+    
+    return df if 'df' in locals() else None
 
 def main():
     parser = argparse.ArgumentParser(description="Process audio files from a specified folder.")
-    parser.add_argument("--dataset", choices=["meld", "iemocap"], help="Dataset to process (MELD or IEMOCAP)")
+    parser.add_argument("--dataset", choices=["meld", "iemocap", "emodb"], help="Dataset to process (MELD or IEMOCAP)")
     parser.add_argument("--folder", choices=["dev", "train", "test"], help="MELD Folder to process (dev, train, or test)")
+    # parser.add_argument('--features_csv', type=str, help='Optional: Path to the extracted audio features CSV to merge labels')
     args = parser.parse_args()
 
     if args.dataset == "meld":
@@ -143,6 +184,23 @@ def main():
         input_file = 'data/IEMOCAP_full_release/iemocap_full_dataset.csv'
         output_file = 'speech_features/iemocap_audio_features.csv'
         process_csv(input_file, output_file)
+
+    elif args.dataset == 'emodb':
+        # Construct the full path to the chosen folder
+        folder_path = f'../data/emodb/wav/'
+        
+        # Ensure the folder exists
+        if not os.path.isdir(folder_path):
+            print(f"Error: The folder {folder_path} does not exist.")
+            return
+
+        # Construct the output CSV filename
+        output_csv = f"../speech_features/emodb_audio_features.csv"
+
+        # Process the chosen folder
+        results_df = process_audio_folder(folder_path, output_csv)
+        final = extract_emodb_labels(audio_folder=None, results_df=results_df, output_csv=output_csv)
+        final.to_csv(output_csv)
 
 if __name__ == "__main__":
     main()

@@ -123,6 +123,43 @@ def load_and_prepare_iemocap_data(iemocap_file, use_categorical=False):
     except Exception as e:
         print(f"Error loading IEMOCAP data: {str(e)}")
         return None, None, None, None
+    
+def load_and_prepare_emodb_data(emodb_file, use_categorical=False):
+    try:
+        df = pd.read_csv(emodb_file)
+        
+        if use_categorical:
+            feature_columns = [col for col in df.columns if col.endswith('_category')]
+        else:
+            feature_columns = [col for col in df.columns if col.endswith('_standardized')]
+        
+        if not feature_columns:
+            raise ValueError(f"No suitable feature columns found in {emodb_file}")
+        
+        if 'emotion' not in df.columns:
+            raise KeyError("'emotion' column not found in dataset")
+        
+        train_df = df[df['mode'] == 'train'] if 'mode' in df.columns else df.sample(frac=0.8, random_state=42)
+        test_df = df[df['mode'] == 'test'] if 'mode' in df.columns else df.drop(train_df.index)
+        
+        X_train, y_train = train_df[feature_columns], train_df['emotion']
+        X_test, y_test = test_df[feature_columns], test_df['emotion']
+        
+        X_train, y_train = process_features(X_train, y_train, feature_columns)
+        X_test, y_test = process_features(X_test, y_test, feature_columns)
+        
+        print("Train set:")
+        print(f"Loaded {len(X_train)} samples with {X_train.shape[1]} features")
+        print(f"Emotion distribution:\n{y_train.value_counts()}")
+        print("\nTest set:")
+        print(f"Loaded {len(X_test)} samples with {X_test.shape[1]} features")
+        print(f"Emotion distribution:\n{y_test.value_counts()}")
+        
+        return X_train, X_test, y_train, y_test
+    except Exception as e:
+        print(f"Error loading EmoDB data: {str(e)}")
+        return None, None, None, None
+    
 def train_and_evaluate_model(model, X_train, X_test, y_train, y_test, model_name, le):
     if X_train is None or y_train is None or X_test is None or y_test is None:
         print(f"Cannot train {model_name} due to data loading error")
@@ -151,7 +188,7 @@ def train_and_evaluate_model(model, X_train, X_test, y_train, y_test, model_name
 
 def main():
     # Choose dataset
-    dataset = 'IEMOCAP' # MELD/IEMOCAP
+    dataset = 'EMODB' # MELD/IEMOCAP/EMODB
     use_categorical = False # "Use categorical features? (True/False): ")
     number_of_classes = 5
 
@@ -177,6 +214,17 @@ def main():
 
         # Load and prepare the data
         X_train, X_test, y_train, y_test = load_and_prepare_iemocap_data(iemocap_file, use_categorical)
+
+        if X_train is None or X_test is None or y_train is None or y_test is None:
+            print("Error loading data. Exiting.")
+            return
+        
+    elif dataset == "EMODB":
+        # File path for EMODB
+        emodb_file = f'../speech_features/processed_emodb_audio_features.csv'
+
+        # Load and prepare the data
+        X_train, X_test, y_train, y_test = load_and_prepare_emodb_data(emodb_file, use_categorical)
 
         if X_train is None or X_test is None or y_train is None or y_test is None:
             print("Error loading data. Exiting.")
