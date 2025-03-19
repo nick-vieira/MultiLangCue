@@ -27,7 +27,6 @@ beautifulsoup4==4.12.2
 black==21.12b0
 bleach==6.0.0
 blessed==1.20.0
-blinker==1.6.2
 blis==0.7.9
 Brotli==1.0.9
 cachetools==5.3.0
@@ -76,7 +75,7 @@ gitdb==4.0.10
 GitPython==3.1.31
 google-auth==2.22.0
 google-auth-oauthlib==1.0.0
-googleads==3.8.0
+googleads
 gpustat==1.1.1
 gradio==3.35.2
 gradio_client==0.2.7
@@ -189,7 +188,7 @@ prettytable==3.7.0
 proglog==0.1.10
 prometheus-client==0.16.0
 prompt-toolkit==3.0.38
-promptsource==0.2.3
+promptsource
 protobuf==3.20.3
 psutil==5.9.5
 ptyprocess==0.7.0
@@ -261,7 +260,7 @@ starlette==0.27.0
 stopit==1.1.1
 streamlit==0.82.0
 style==1.1.0
-suds-jurko==0.6
+suds-community
 sympy==1.11.1
 tabulate==0.9.0
 tenacity==8.2.2
