@@ -4,8 +4,7 @@ import json
 import os 
 import pandas as pd
 import matplotlib.pyplot as plt
-
-
+from sklearn.model_selection import train_test_split
 
 def process_dataset(dataset, window=110, audio_description='True', audio_impression='False', audio_only='False', audio_context='False',experiments_setting='lora'):
     '''
@@ -18,10 +17,12 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
     label_set = {
         'iemocap':['happy', 'sad', 'neutral', 'angry', 'excited', 'frustrated'],
         'meld':   ['neutral', 'surprise', 'fear', 'sad', 'joyful', 'disgust', 'angry'],
+        'emodb': ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral'],
     }
     label_text_set = {
         'iemocap':'happy, sad, neutral, angry, excited, frustrated',
         'meld'   :'neutral, surprise, fear, sad, joyful, disgust, angry',
+        'emodb': 'anger, boredom, disgust, fear, happiness, sadness, neutral',
     }
 
     ## load audio feature files
@@ -32,6 +33,8 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
     elif dataset == 'iemocap':
         audio_feature = pd.read_csv('../speech_features/processed_iemocap_audio_features_5.csv')
         iemocap_file = pd.read_csv('../data/IEMOCAP_full_release/iemocap_full_dataset.csv')
+    elif dataset == 'emodb':
+        audio_feature = pd.read_csv('../speech_features/processed_emodb_audio_features.csv')
     ###
 
     emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
@@ -175,6 +178,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
                         temp_content_str += f' {description}'
                     if audio_impression == 'True':
                         temp_content_str += f' {impression}'
+
             elif dataset == 'iemocap':
                 target_sentence = target_utterance.split(':')[1][1:-1]
                 filtered_rows = audio_feature.loc[(audio_feature['video_id'] == conv_id) & (audio_feature['text'] == target_sentence)]
@@ -187,6 +191,52 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
                     temp_content_str += f' {description}'
                 if audio_impression == 'True':
                     temp_content_str += f' {impression}'
+
+            elif dataset == 'emodb':
+                emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+                content_target_dict = {}
+                content_task_dict = {}
+                audio_path_dict = {}
+                
+                # Process EmoDB dataset
+                data_list = []
+                
+                for idx, row in audio_feature.iterrows():
+                    conv_id = row['filename'].split('.')[0]  # Extract unique ID from filename
+                    sentence = row['transcription']
+                    emotion_label = row['emotion'].lower()  # Ensure lowercase consistency
+
+                    temp_content_str = f'Now you are an expert in sentiment and emotional analysis.\n'
+                    temp_content_str += f'The following utterance is:\n\n"{sentence}"\n\n'
+
+                    # Add pitch and intensity features
+                    avg_pitch = row.get('avg_pitch', 'unknown')
+                    pitch_variation = row.get('pitch_std', 'unknown')
+                    avg_intensity = row.get('avg_intensity', 'unknown')
+
+                    temp_content_str += f'Pitch: {avg_pitch}, Variation: {pitch_variation}, Intensity: {avg_intensity}\n'
+
+                    if audio_description == 'True':
+                        description = row.get('description', '')
+                        temp_content_str += f'Description: {description}\n'
+                    
+                    if audio_impression == 'True':
+                        impression = row.get('impression', '')
+                        temp_content_str += f'Impression: {impression}\n'
+
+                    temp_content_str += f'Please classify the emotional label of the utterance from <{label_text_set[dataset]}>.\n'
+                    
+                    data_list.append({
+                        'conv_id': conv_id,
+                        'text': temp_content_str,
+                        'emotion': emotion_label,
+                        'audio_path': row['filename']
+                    })
+
+                # Convert to DataFrame
+                data_df = pd.DataFrame(data_list)
+                train_data, test_valid_data = train_test_split(data_df, test_size=0.2, stratify=data_df['emotion'], random_state=42)
+                test_data, valid_data = train_test_split(test_valid_data, test_size=0.5, stratify=test_valid_data['emotion'], random_state=42)
             ##-------------------------------------------------------
             if experiments_setting != 'zero_shot':
                 if audio_only == 'True':
@@ -214,14 +264,12 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
     elif dataset == 'meld':
         train_ids, test_ids, valid_ids = data[4], data[5], data[6]
 
-
     new_train_id, new_test_id, new_valid_id = [], [], []
     # new_train_target, new_test_target, new_valid_target = [], [], []
     for train_id in train_ids:
         for conv_turn in range(len(sentence_dict[train_id])):
             new_train_id.append(f'{train_id}_{conv_turn}')
             
-        
     for test_id in test_ids:
         for conv_turn in range(len(sentence_dict[test_id])):
             new_test_id.append(f'{test_id}_{conv_turn}')
@@ -231,8 +279,20 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             new_valid_id.append(f'{valid_id}_{conv_turn}')
 
     # dataset_list = ['train', 'test', 'valid']
-    data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
+    if dataset == 'iemocap' or 'meld':
+        data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
+    else:
+        data_path =f'../PROCESSED_DATASET/{dataset}'
     os.makedirs(data_path, exist_ok=True)
+
+    def save_json(data, filename):
+        with open(filename, 'w') as f_out:
+            for _, row in data.iterrows():
+                f_out.write(json.dumps({'path': row['audio_path'], 'input': row['text'], 'target': row['emotion']}, ensure_ascii=False) + '\n')
+
+    save_json(train_data, f'{data_path}/train.json')
+    save_json(test_data, f'{data_path}/test.json')
+    save_json(valid_data, f'{data_path}/valid.json')
 
     with open(f'{data_path}/train.json', 'w') as f_train:
         for train_id in new_train_id:
@@ -263,7 +323,6 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
 
     return data_path
 
-
 parser = argparse.ArgumentParser(description='Data processing script')
 parser.add_argument('--dataset', type=str, default='meld', help='Dataset name or path')
 parser.add_argument('--historical_window', type=int, default=12, help='Historical window size')
@@ -275,12 +334,10 @@ parser.add_argument('--experiments_setting', type=str, default='lora', help='Exp
 args = parser.parse_args()
 
 
-
-
 # Process data
 processed_data_path = process_dataset(dataset=args.dataset, window=args.historical_window
         , audio_description=args.audio_description, audio_impression=args.audio_impression, 
         audio_only=args.audio_only, audio_context=args.audio_context, experiments_setting=args.experiments_setting)
 
-print(processed_data_path)
+print(f'Processed data saved at: {processed_data_path}')
 
