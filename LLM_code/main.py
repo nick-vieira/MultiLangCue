@@ -57,7 +57,7 @@ def get_labels_attr(dataset):
         'meld':"'neutral', 'surprise', 'fear', 'sad', 'joyful', 'disgust', 'angry'",
         'EmoryNLP': "'Joyful','Mad','Peaceful', 'Neutral','Sad','Powerful','Scared'",
         'dialydailog': "'happy', 'neutral', 'angry', 'sad', 'fear', 'surprise','disgust'",
-        'emodb': 'anger, boredom, disgust, fear, happiness, sadness, neutral',
+        'emodb':"'anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral'",
     }
 
     emotional_label_dict = {text_label:num_label for num_label, text_label in enumerate(label_list_set[dataset])}
@@ -76,7 +76,7 @@ def report_score(dataset, golds, preds, mode='test'):
         target_names = ['Joyful','Mad','Peaceful', 'Neutral','Sad','Powerful','Scared']
         digits = 7
     elif dataset == 'emodb':
-        target_names = ['anger, boredom, disgust, fear, happiness, sadness, neutral']
+        target_names = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral']
         digits = 7
 
     res = {}

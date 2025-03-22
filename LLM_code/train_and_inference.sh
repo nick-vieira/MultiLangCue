@@ -6,8 +6,8 @@ FLAG=1
 # ------  select basemodel ----------
 # MODEL_NAME='LLaMA2'
 # MODEL_NAME='LLaMA3'
-# MODEL_NAME='LLaMA3-instruct-70b'
-MODEL_NAME='Meta-Llama-3-8B-Instruct'
+MODEL_NAME='suzume-llama-3-8B-multilingual'
+# MODEL_NAME='Meta-Llama-3-8B-Instruct'
 # MODEL_NAME='Phi3-medium'
 
 # ------ select the experiment ------------
@@ -18,8 +18,9 @@ Experiments_setting='zero_shot'
 # Experiments_setting='all_parameters'
 
 #  ------ select the dataset ------ 
-dataset='iemocap'
+# dataset='iemocap'
 # dataset='meld'
+dataset='emodb'
 
 # ------  prompt input format setting ------ 
 audio_description='False'
@@ -59,11 +60,11 @@ data_percent=1.0
 
 
 case ${MODEL_NAME} in
-'ChatGLM'|'ChatGLM2'|'LLaMA'|'LLaMA2'|'LLaMA3'|'Meta-Llama-3-8B-Instruct'|'LLaMA3-instruct-70b'|'Bloom-560m'|'Phi3-medium')
+'ChatGLM'|'ChatGLM2'|'LLaMA'|'LLaMA2'|'LLaMA3'|'Meta-Llama-3-8B-Instruct'|'suzume-llama-3-8B-multilingual'|'Bloom-560m'|'Phi3-medium')
     case ${Experiments_setting} in
     'zero_shot'|'few_shot'|'lora'|'all_parameters')
         case ${dataset} in
-        'iemocap'|'meld')
+        'iemocap'|'meld'|'emodb')
             echo "******************************************************************************************"
             echo "All parameters are valid."
             echo "The dataset you have selected is: ${dataset} !"
@@ -118,6 +119,10 @@ then
     then
         #MAX_LENGTH=1024
         MAX_LENGTH=1500
+    elif [ ${dataset} = 'emodb' ]
+    then
+        #MAX_LENGTH=1024
+        MAX_LENGTH=1500
     else
         echo -e "Your choose is not in MY candidations! Please check your Model name!"
     fi
@@ -141,9 +146,9 @@ then
     elif [ ${MODEL_NAME} = 'Meta-Llama-3-8B-Instruct' ]
     then
         MODEL_PATH='meta-llama/Meta-Llama-3-8B-instruct'
-    elif [ ${MODEL_NAME} = 'LLaMA3-instruct-70b' ]
+    elif [ ${MODEL_NAME} = 'suzume-llama-3-8B-multilingual' ]
     then
-        MODEL_PATH='LLaMA3-instruct-70b MODELPATH'
+        MODEL_PATH='lightblue/suzume-llama-3-8B-multilingual'
     elif [ ${MODEL_NAME} = 'Phi3-medium' ]    
     then
         MODEL_PATH='Phi3-medium MODELPATH'
@@ -160,7 +165,7 @@ then
         LORA=False
         LR=0
         CHECKPOINT_DIR=None
-        echo -e "Your choose ${Experiments_setting}! The experiment will be set as ZERO_SHOT model"
+        echo -e "You chose ${Experiments_setting}! The experiment will be set as ZERO_SHOT model"
     elif [ ${Experiments_setting} = 'few_shot' ]
     then
         DO_EVAL=True
@@ -168,7 +173,7 @@ then
         LORA=False
         LR=0
         CHECKPOINT_DIR=None
-        echo -e "Your choose ${Experiments_setting}! The experiment will be set as FEW_SHOT model"
+        echo -e "You chose ${Experiments_setting}! The experiment will be set as FEW_SHOT model"
     elif [ ${Experiments_setting} = 'lora' ]
     then
         DO_EVAL=True
@@ -176,7 +181,7 @@ then
         LORA=True
         LR=${LORA_LR}
         CHECKPOINT_DIR=None
-        echo -e "Your choose ${Experiments_setting}! The experiment will be set as LORA model"
+        echo -e "You chose ${Experiments_setting}! The experiment will be set as LORA model"
     elif [ ${Experiments_setting} = 'all_parameters' ]
     then
         DO_EVAL=True
@@ -184,9 +189,9 @@ then
         LORA=False
         LR=2e-5
         CHECKPOINT_DIR=None
-        echo -e "Your choose ${Experiments_setting}! The experiment will be set as ALL_PARAMETERS model"
+        echo -e "You chose ${Experiments_setting}! The experiment will be set as ALL_PARAMETERS model"
     else
-        echo -e "Your choose is not in MY candidations! Please CHECK your Experiments Setting!"
+        echo -e "Your choice is not in MY candidations! Please CHECK your Experiments Setting!"
     fi
 
 
