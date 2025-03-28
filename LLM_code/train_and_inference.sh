@@ -4,7 +4,7 @@ FLAG=1
 # Please adjust the following parameters according to your needs. Rememeber to update the MODELPATH for each LLM model.
 
 # ------  select basemodel ----------
-# MODEL_NAME='LLaMA2'
+# MODEL_NAME='ZeroShot-2.2.1-Llama2-13b-Multilanguage-3.0.3'
 # MODEL_NAME='LLaMA3'
 MODEL_NAME='suzume-llama-3-8B-multilingual'
 # MODEL_NAME='Meta-Llama-3-8B-Instruct'
@@ -30,13 +30,13 @@ audio_only='False' # do not use text input
 
 # ------  training setting ------ 
 SEED=11
-num_train_epochs=15
+num_train_epochs=40
 LORA_LR=3e-4
 # training setting for projection-based model
 use_encoder='False' # use False for SpeechCueLLM, True for projection-based model
 projector='linear' # projector: linear, q-former
 freeze_llm='False'
-freeze_encoder='True'
+freeze_encoder='False'
 # set the accumulation and card when backwarding and inferring
 accumulations=8
 graphics_card=1
@@ -60,7 +60,7 @@ data_percent=1.0
 
 
 case ${MODEL_NAME} in
-'ChatGLM'|'ChatGLM2'|'LLaMA'|'LLaMA2'|'LLaMA3'|'Meta-Llama-3-8B-Instruct'|'suzume-llama-3-8B-multilingual'|'Bloom-560m'|'Phi3-medium')
+'ChatGLM'|'ChatGLM2'|'LLaMA'|'ZeroShot-2.2.1-Llama2-13b-Multilanguage-3.0.3'|'LLaMA3'|'Meta-Llama-3-8B-Instruct'|'suzume-llama-3-8B-multilingual'|'Bloom-560m'|'Phi3-medium')
     case ${Experiments_setting} in
     'zero_shot'|'few_shot'|'lora'|'all_parameters')
         case ${dataset} in
@@ -122,7 +122,7 @@ then
     elif [ ${dataset} = 'emodb' ]
     then
         #MAX_LENGTH=1024
-        MAX_LENGTH=1500
+        MAX_LENGTH=2500
     else
         echo -e "Your choose is not in MY candidations! Please check your Model name!"
     fi
@@ -137,9 +137,9 @@ then
     elif [ ${MODEL_NAME} = 'LLaMA' ]
     then
         MODEL_PATH='LLaMA MODELPATH'
-    elif [ ${MODEL_NAME} = 'LLaMA2' ]
+    elif [ ${MODEL_NAME} = 'ZeroShot-2.2.1-Llama2-13b-Multilanguage-3.0.3' ]
     then
-        MODEL_PATH='LLaMA2 MODELPATH'
+        MODEL_PATH='Weni/ZeroShot-2.2.1-Llama2-13b-Multilanguage-3.0.3'
     elif [ ${MODEL_NAME} = 'LLaMA3' ]
     then
         MODEL_PATH='LLaMA3 MODELPATH'
@@ -163,7 +163,7 @@ then
         DO_EVAL=True
         DO_TRAIN=False
         LORA=False
-        LR=0
+        LR=${LORA_LR}
         CHECKPOINT_DIR=None
         echo -e "You chose ${Experiments_setting}! The experiment will be set as ZERO_SHOT model"
     elif [ ${Experiments_setting} = 'few_shot' ]
@@ -209,7 +209,6 @@ then
         --gradient_accumulation_steps ${accumulations} \
         --eval_batch_size 1 \
         --num_train_epochs ${num_train_epochs} \
-        --save_steps 100000 \
         --lora ${LORA}\
         --learning_rate ${LR} \
         --do_eval ${DO_EVAL} \
@@ -219,9 +218,30 @@ then
         --seed ${SEED} \
         --freeze_llm ${freeze_llm} \
         --freeze_encoder ${freeze_encoder}\
-        --projector ${projector}
+        --projector ${projector} \
+        --emotion_prediction 'True' \
+        --feature 'encoder' \
+        --save_steps 500 \
+        --encoder 'd2v' \
+        --weight_decay 0.01 \
+        --
     else
         echo "Processed Data_Path: $DATA_PATH"
+        for epoch in {1..40}
+        do
+            if [ $epoch -le 3 ]
+            then
+                THETA=0.5
+                BETA=0.5
+            elif [ $epoch -le 7 ]
+            then
+                THETA=1.0
+                BETA=1.0 
+            else
+                THETA=1.5
+                BETA=1.5
+            fi
+        done
         deepspeed --master_port=${port} main.py \
         --dataset ${dataset} \
         --model_name_or_path ${MODEL_PATH} \
@@ -233,13 +253,17 @@ then
         --gradient_accumulation_steps ${accumulations} \
         --eval_batch_size 1 \
         --num_train_epochs ${num_train_epochs} \
-        --save_steps 100000 \
+        --save_steps 500 \
         --lora ${LORA}\
         --learning_rate ${LR} \
         --do_eval ${DO_EVAL} \
         --do_train ${DO_TRAIN} \
         --statistic_mode True \
         --data_percent ${data_percent} \
-        --seed ${SEED}
+        --seed ${SEED} \
+        --emotion_prediction 'True' \
+        --weight_decay 0.01 \
+        --beta $BETA \
+        --theta $THETA
     fi  
 fi
