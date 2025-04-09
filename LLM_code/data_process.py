@@ -90,32 +90,44 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             all_conv_id = row['filename'].split('.')[0]
             emotion_label = row['emotion'].lower()
 
-            text = "Now you are an expert in sentiment and emotional analysis using only audio features.\n"
-            text += f"Audio file: {row['filename']}\n"
+            # text = (
+            #     "Now you are an expert in sentiment and emotional analysis using only audio features.\n"
+            #     f"Audio file: {row['filename']}\n"
+            #     f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
+            #     f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+            #     f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            # )
+            text = (
+                f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
+                f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+                f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            )
 
-            avg_pitch = row.get('avg_pitch', 'unknown')
-            pitch_variation = row.get('pitch_std', 'unknown')
-            avg_intensity = row.get('avg_intensity', 'unknown')
-            text += f'Pitch: {avg_pitch}, Variation: {pitch_variation}, Intensity: {avg_intensity}\n'
+            # if audio_description == 'True':
+            #     description = row.get('description', '')
+            #     text += f'Description: {description}\n'
 
-            if audio_description == 'True':
-                description = row.get('description', '')
-                text += f'Description: {description}\n'
+            # if audio_impression == 'True':
+            #     impression = row.get('impression', '')
+            #     text += f'Impression: {impression}\n'
 
-            if audio_impression == 'True':
-                impression = row.get('impression', '')
-                text += f'Impression: {impression}\n'
+            # text += f'Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n'
 
-            text += f'Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n'
-
-            for conv_id in all_conv_id:
-                data_list.append({
-                    'conv_id': conv_id,
-                    'text': text,
-                    'emotion': emotion_label,
-                    'audio_path': row['filename']
-                })
-
+            # for conv_id in all_conv_id:
+            #     data_list.append({
+            #         'conv_id': conv_id,
+            #         'text': text,
+            #         'emotion': emotion_label,
+            #         'audio_path': row['filename']
+            #     })
+        
+            data_list.append({
+                'conv_id': row['filename'].split('.')[0],
+                'text': text,
+                'emotion': emotion_label,
+                'audio_path': row['filename']  # Still used for audio, but not in model input
+            })
+        
         # Convert to DataFrame
         data_df = pd.DataFrame(data_list)
 
@@ -123,7 +135,8 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         train_data, test_valid = train_test_split(data_df, test_size=0.2, stratify=data_df['emotion'], random_state=42)
         test_data, valid_data = train_test_split(test_valid, test_size=0.5, stratify=test_valid['emotion'], random_state=42)
 
-        data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
+        # data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
+        data_path = f'../PROCESSED_DATASET/{dataset}/cleaned/no_leakage'
         os.makedirs(data_path, exist_ok=True)
 
         save_json(train_data, os.path.join(data_path, 'train.json'))

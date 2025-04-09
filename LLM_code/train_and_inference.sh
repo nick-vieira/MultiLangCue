@@ -12,9 +12,9 @@ MODEL_NAME='suzume-llama-3-8B-multilingual'
 
 # ------ select the experiment ------------
 # Experiments_setting='test'
-Experiments_setting='zero_shot'
+# Experiments_setting='zero_shot'
 # Experiments_setting='few_shot'
-# Experiments_setting='lora'
+Experiments_setting='lora'
 # Experiments_setting='all_parameters'
 
 #  ------ select the dataset ------ 
@@ -30,8 +30,8 @@ audio_only='False' # do not use text input
 
 # ------  training setting ------ 
 SEED=11
-num_train_epochs=40
-LORA_LR=3e-4
+num_train_epochs=11
+LORA_LR=1e-4
 # training setting for projection-based model
 use_encoder='False' # use False for SpeechCueLLM, True for projection-based model
 projector='linear' # projector: linear, q-former
@@ -227,21 +227,21 @@ then
         --
     else
         echo "Processed Data_Path: $DATA_PATH"
-        for epoch in {1..40}
-        do
-            if [ $epoch -le 3 ]
-            then
-                THETA=0.5
-                BETA=0.5
-            elif [ $epoch -le 7 ]
-            then
-                THETA=1.0
-                BETA=1.0 
-            else
-                THETA=1.5
-                BETA=1.5
-            fi
-        done
+        # for epoch in {1..40}
+        # do
+        #     if [ $epoch -le 3 ]
+        #     then
+        #         THETA=0.5
+        #         BETA=0.5
+        #     elif [ $epoch -le 7 ]
+        #     then
+        #         THETA=1.0
+        #         BETA=1.0 
+        #     else
+        #         THETA=1.5
+        #         BETA=1.5
+        #     fi
+        # done
         deepspeed --master_port=${port} main.py \
         --dataset ${dataset} \
         --model_name_or_path ${MODEL_PATH} \
@@ -262,8 +262,8 @@ then
         --data_percent ${data_percent} \
         --seed ${SEED} \
         --emotion_prediction 'True' \
-        --weight_decay 0.01 \
-        --beta $BETA \
-        --theta $THETA
+        --weight_decay 0.01
+        # --beta $BETA \
+        # --theta $THETA
     fi  
 fi
