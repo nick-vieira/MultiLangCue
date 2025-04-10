@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 def save_json(data, filename):
     with open(filename, 'w') as f:
@@ -45,7 +46,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
     elif dataset == 'emodb':
         audio_feature = pd.read_csv('../speech_features/processed_emodb_audio_features.csv')
     ###
-
+    
     emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
     content_target_dict = {}
     content_task_dict = {}
@@ -78,6 +79,10 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             speaker_label_dict[conv_id] = temp_speaker_list
 
     elif dataset == 'emodb':
+        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
+        scaler = StandardScaler()
+        audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']] = scaler.fit_transform(
+            audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']])
         emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
         content_target_dict = {}
         content_task_dict = {}

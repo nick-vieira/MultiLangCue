@@ -582,8 +582,8 @@ else:
             tokenizer.add_special_tokens({'pad_token': '[PAD]'})
             model.resize_token_embeddings(len(tokenizer))
             model.generation_config.pad_token_id = tokenizer.pad_token_id
-        deepspeed_config["bfloat16"]["enabled"] = True
-        deepspeed_config["fp16"]["enabled"] = False
+        deepspeed_config["bfloat16"]["enabled"] = False
+        deepspeed_config["fp16"]["enabled"] = True
 
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.unk_token
