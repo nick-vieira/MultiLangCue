@@ -66,9 +66,11 @@ def get_labels_attr(dataset):
 
 
 def report_score(dataset, golds, preds, mode='test'):
+    unique_labels = sorted(set(golds + preds))
     if dataset == 'iemocap':
-        target_names = ['hap', 'sad', 'neu', 'ang', 'exc', 'fru']
-        digits = 6
+        all_iemocap_labels = ['hap', 'sad', 'neu', 'ang', 'exc', 'fru']
+        target_names = [all_iemocap_labels[i] for i in unique_labels]
+        digits = len(target_names)
     elif dataset == 'meld':
         target_names = ['neutral', 'surprise', 'fear', 'sad', 'joyful', 'disgust', 'angry']
         digits = 7
@@ -76,8 +78,11 @@ def report_score(dataset, golds, preds, mode='test'):
         target_names = ['Joyful','Mad','Peaceful', 'Neutral','Sad','Powerful','Scared']
         digits = 7
     elif dataset == 'emodb':
-        target_names = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral']
-        digits = 7
+        # target_names = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral']
+        # digits = 7
+        all_emodb_labels = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral']
+        target_names = [all_emodb_labels[i] for i in unique_labels]
+        digits = len(target_names)
 
     res = {}
     res['Acc_SA'] = accuracy_score(golds, preds)
@@ -735,7 +740,16 @@ if __name__ == "__main__":
                     global_steps += 1
                     should_save = True
                 if global_steps % args.save_steps == 0 and should_save:
-                    model.save_checkpoint(args.output_dir)
+                    try:
+                        model.save_checkpoint(args.output_dir)
+                    except Exception as e:
+                        print(f"Primary save_checkpoint failed: {e}. Attempting torch.save fallback.")
+                        try:
+                            from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+                            fp32_state_dict = get_fp32_state_dict_from_zero_checkpoint(model, args.output_dir)
+                            torch.save(fp32_state_dict, os.path.join(args.output_dir, "pytorch_model_fp32.bin"))
+                        except Exception as nested_e:
+                            print(f"torch.save fallback also failed: {nested_e}")
                     should_save = False
 
                 # model starts to evaluation

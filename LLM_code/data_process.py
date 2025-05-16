@@ -45,9 +45,12 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         iemocap_file = pd.read_csv('../data/IEMOCAP_full_release/iemocap_full_dataset.csv')
     elif dataset == 'emodb':
         audio_feature = pd.read_csv('../speech_features/processed_emodb_audio_features.csv')
+        # audio_feature = audio_feature[audio_feature['emotion'].isin(['sadness', 'neutral'])]
+        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
     ###
     
     emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+    # emotional_dict = {'anger': 0, 'neutral': 1}  # <- REDUCED LABEL SET
     content_target_dict = {}
     content_task_dict = {}
     speaker_label_dict = {}
@@ -81,19 +84,44 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
     elif dataset == 'emodb':
         audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
         scaler = StandardScaler()
-        audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']] = scaler.fit_transform(
-            audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']])
-        emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+        # Sample fix to update normalization to speaker-specific
+        audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']] = (
+            audio_feature.groupby('speaker_id')[['avg_pitch', 'pitch_std', 'avg_intensity']]
+            .transform(lambda x: StandardScaler().fit_transform(x))
+        )
+        # emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+        # label_text_set['emodb'] = 'anger, neutral'
+        # label_text_set['emodb'] = 'sadness, neutral'
+        # label_text_set['emodb'] = 'happiness, neutral'
         content_target_dict = {}
         content_task_dict = {}
         audio_path_dict = {}
         
         # Process EmoDB dataset
         data_list = []
+        prose_count = 0
         
         for idx, row in audio_feature.iterrows():
             all_conv_id = row['filename'].split('.')[0]
             emotion_label = row['emotion'].lower()
+
+            prose_rule = ""
+
+            if (
+                pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
+                row['avg_intensity'] * scaler.scale_[2] + scaler.mean_[2] > 70 and
+                row['avg_pitch'] * scaler.scale_[0] + scaler.mean_[0] >= 240
+            ):
+                prose_rule = "This utterange is noticeably louder and higher in pitch than a neutral expression, which in German often signals anger.\n"
+                prose_count += 1
+
+            elif (
+                pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
+                row['avg_intensity'] * scaler.scale_[2] + scaler.mean_[2] > 70 and
+                row['avg_pitch'] * scaler.scale_[0] + scaler.mean_[0] >= 145
+            ):
+                prose_rule = "This utterange is noticeably louder but lower in pitch than a neutral expression, which in German often signals sadness.\n"
+                prose_count += 1
 
             # text = (
             #     "Now you are an expert in sentiment and emotional analysis using only audio features.\n"
@@ -105,6 +133,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             text = (
                 f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
                 f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+                f"{prose_rule}"
                 f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
             )
 
@@ -132,7 +161,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
                 'emotion': emotion_label,
                 'audio_path': row['filename']  # Still used for audio, but not in model input
             })
-        
+
         # Convert to DataFrame
         data_df = pd.DataFrame(data_list)
 
