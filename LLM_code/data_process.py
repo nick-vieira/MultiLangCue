@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+scalers = {}
+
 def save_json(data, filename):
     with open(filename, 'w') as f:
         for _, row in data.iterrows():
@@ -15,6 +17,37 @@ def save_json(data, filename):
                 'input': row['text'],
                 'target': row['emotion']
             }, ensure_ascii=False) + '\n')
+
+def scale_group(group):
+    cols = ['avg_pitch', 'pitch_std', 'avg_intensity']
+
+    # Ensure all three columns exist and have valid numeric values
+    if group[cols].isnull().any().any():
+        return group  # Skip if any NaNs
+
+    if group[cols].shape[0] < 2:
+        return group  # Not enough samples to compute std
+
+    # Confirm all columns are present
+    if not all(col in group for col in cols):
+        return group
+
+    # Fit scaler
+    scaler = StandardScaler()
+    try:
+        scaled = scaler.fit_transform(group[cols])
+        if scaled.shape[1] != 3:
+            return group  # Skip if scaling result is unexpected
+        group[cols] = scaled
+        scalers[group.name] = {
+            'mean': scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist()
+        }
+    except Exception as e:
+        print(f"Skipping group {group.name} due to error: {e}")
+        return group
+
+    return group
 
 def process_dataset(dataset, window=110, audio_description='True', audio_impression='False', audio_only='False', audio_context='False',experiments_setting='lora'):
     '''
@@ -85,10 +118,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
         scaler = StandardScaler()
         # Sample fix to update normalization to speaker-specific
-        audio_feature[['avg_pitch', 'pitch_std', 'avg_intensity']] = (
-            audio_feature.groupby('speaker_id')[['avg_pitch', 'pitch_std', 'avg_intensity']]
-            .transform(lambda x: StandardScaler().fit_transform(x))
-        )
+        audio_feature = audio_feature.groupby('speaker_id', group_keys=False).apply(scale_group)
         # emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
         # label_text_set['emodb'] = 'anger, neutral'
         # label_text_set['emodb'] = 'sadness, neutral'
@@ -106,19 +136,20 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             emotion_label = row['emotion'].lower()
 
             prose_rule = ""
+            speaker_id = row['speaker_id']
 
             if (
                 pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
-                row['avg_intensity'] * scaler.scale_[2] + scaler.mean_[2] > 70 and
-                row['avg_pitch'] * scaler.scale_[0] + scaler.mean_[0] >= 240
+                row['avg_intensity'] * scalers[speaker_id]['scale'][2] + scalers[speaker_id]['scale'][2] > 70 and
+                row['avg_pitch'] * scalers[speaker_id]['scale'][0] + scalers[speaker_id]['scale'][0] >= 240
             ):
                 prose_rule = "This utterange is noticeably louder and higher in pitch than a neutral expression, which in German often signals anger.\n"
                 prose_count += 1
 
             elif (
                 pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
-                row['avg_intensity'] * scaler.scale_[2] + scaler.mean_[2] > 70 and
-                row['avg_pitch'] * scaler.scale_[0] + scaler.mean_[0] >= 145
+                row['avg_intensity'] * scalers[speaker_id]['scale'][2] + scalers[speaker_id]['scale'][2] > 70 and
+                row['avg_pitch'] * scalers[speaker_id]['scale'][0] + scalers[speaker_id]['scale'][0] >= 145
             ):
                 prose_rule = "This utterange is noticeably louder but lower in pitch than a neutral expression, which in German often signals sadness.\n"
                 prose_count += 1
