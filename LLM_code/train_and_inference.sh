@@ -20,7 +20,8 @@ Experiments_setting='lora'
 #  ------ select the dataset ------ 
 # dataset='iemocap'
 # dataset='meld'
-dataset='emodb'
+# dataset='emodb'
+dataset='esd'
 
 # ------  prompt input format setting ------ 
 audio_description='False'
@@ -30,7 +31,7 @@ audio_only='False' # do not use text input
 
 # ------  training setting ------ 
 SEED=11
-num_train_epochs=11
+num_train_epochs=5 # 5 epochs for ESD, otherwise use 11
 LORA_LR=1e-4
 # training setting for projection-based model
 use_encoder='False' # use False for SpeechCueLLM, True for projection-based model
@@ -64,7 +65,7 @@ case ${MODEL_NAME} in
     case ${Experiments_setting} in
     'zero_shot'|'few_shot'|'lora'|'all_parameters')
         case ${dataset} in
-        'iemocap'|'meld'|'emodb')
+        'iemocap'|'meld'|'emodb'|'esd')
             echo "******************************************************************************************"
             echo "All parameters are valid."
             echo "The dataset you have selected is: ${dataset} !"
@@ -123,6 +124,12 @@ then
     then
         #MAX_LENGTH=1024
         MAX_LENGTH=2500
+        MAX_SEQ_LENGTH=512
+     elif [ ${dataset} = 'esd' ]
+    then
+        #MAX_LENGTH=1024
+        MAX_LENGTH=2500
+        MAX_SEQ_LENGTH=512
     else
         echo -e "Your choose is not in MY candidations! Please check your Model name!"
     fi
@@ -227,21 +234,6 @@ then
         --
     else
         echo "Processed Data_Path: $DATA_PATH"
-        # for epoch in {1..40}
-        # do
-        #     if [ $epoch -le 3 ]
-        #     then
-        #         THETA=0.5
-        #         BETA=0.5
-        #     elif [ $epoch -le 7 ]
-        #     then
-        #         THETA=1.0
-        #         BETA=1.0 
-        #     else
-        #         THETA=1.5
-        #         BETA=1.5
-        #     fi
-        # done
         deepspeed --master_port=${port} main.py \
         --dataset ${dataset} \
         --model_name_or_path ${MODEL_PATH} \
@@ -262,7 +254,13 @@ then
         --data_percent ${data_percent} \
         --seed ${SEED} \
         --emotion_prediction 'True' \
-        --weight_decay 0.01
+        --weight_decay 0.01 \
+        --feature 'text' \
+        --max_seq_length ${MAX_SEQ_LENGTH} \
+        --num_beams 1 \
+        --top_k 1 \
+        --top_p 1.0 \
+        --temp 0.0 \
         # --beta $BETA \
         # --theta $THETA
     fi  

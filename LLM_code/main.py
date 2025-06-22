@@ -34,6 +34,8 @@ from typing import List, Dict
 from peft import LoraConfig, get_peft_model
 import argparse
 from deepspeed.utils.zero_to_fp32 import load_state_dict_from_zero_checkpoint
+import shutil
+from pathlib import Path
 # from colossalai.nn.optimizer import HybridAdam
 # from colossalai.nn.optimizer.zero_optimizer import ZeroOptimizer
 # from colossalai.nn.lr_scheduler import CosineAnnealingWarmupLR
@@ -51,6 +53,7 @@ def get_labels_attr(dataset):
         'EmoryNLP': ['Joyful','Mad','Peaceful', 'Neutral','Sad','Powerful','Scared'],
         'dialydailog': ['happy', 'neutral', 'angry', 'sad', 'fear', 'surprise','disgust'],
         'emodb': ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral'],
+        'esd': ['anger', 'happy', 'sad', 'neutral', 'surprise'],
     }
     label_str_set = {
         'iemocap':"'happy', 'sad', 'neutral', 'angry', 'excited', 'frustrated'",
@@ -58,6 +61,7 @@ def get_labels_attr(dataset):
         'EmoryNLP': "'Joyful','Mad','Peaceful', 'Neutral','Sad','Powerful','Scared'",
         'dialydailog': "'happy', 'neutral', 'angry', 'sad', 'fear', 'surprise','disgust'",
         'emodb':"'anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral'",
+        'esd': "'anger, surprise, happy, sad, neutral'",
     }
 
     emotional_label_dict = {text_label:num_label for num_label, text_label in enumerate(label_list_set[dataset])}
@@ -82,6 +86,10 @@ def report_score(dataset, golds, preds, mode='test'):
         # digits = 7
         all_emodb_labels = ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral']
         target_names = [all_emodb_labels[i] for i in unique_labels]
+        digits = len(target_names)
+    elif dataset == 'esd':
+        all_esd_labels = ['anger', 'surprise', 'happy', 'sad', 'neutral']
+        target_names = [all_esd_labels[i] for i in unique_labels]
         digits = len(target_names)
 
     res = {}
@@ -164,7 +172,7 @@ parser.add_argument(
     "--dataset",
     type=str,
     required=True,
-    choices=['iemocap','meld','EmoryNLP', 'emodb'],
+    choices=['iemocap','meld','EmoryNLP', 'emodb', 'esd'],
     help="Datasets that need to be evaluated"
 )
 
@@ -386,6 +394,13 @@ parser.add_argument(
     default='text'
 )
 
+# parser.add_argument(
+#     "--clear_output",
+#     default=True,
+#     action='store_true',
+#     help="If set, will delete the output_dir before starting"
+# )
+
 args = parser.parse_args()
 do_sample = args.top_k is not None or args.top_p is not None or args.num_beams > 1 or args.temp is not None
 '''
@@ -463,6 +478,7 @@ model_args = {
     "gradient_checkpointing": args.gradient_checkpointing,
     "data_percent": args.data_percent,
     "feature": args.feature
+    # "clear_output": args.clear_output
 }
 args = ModelArgs()
 # pdb.set_trace()
@@ -471,6 +487,12 @@ args.update(model_args)
 # pdb.set_trace()
 
 print(args)
+
+# May need a --clear_output boolean arg for fresh re-evaluations
+# if args.clear_output and os.path.exists(args.output_dir):
+#     print(f"Clearing previous output at {args.output_dir}")
+#     shutil.rmtree(args.output_dir)
+# os.makedirs(args.output_dir, exist_ok=True)
 
 if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir, exist_ok=True)
@@ -869,9 +891,23 @@ if __name__ == "__main__":
                 model.save_checkpoint(args.output_dir)
                 with open(os.path.join(args.output_dir, "deepspeed_config.json"), 'w', encoding='utf-8') as f:
                     f.write(json.dumps(deepspeed_config, indent=5))
+        if args.dataset == "emodb" or args.dataset == "esd":
+            test_file_path = Path(args.data_dir) / "test.json"
+            with open(test_file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                data_list = [json.loads(line) for line in lines]
 
+                for idx, item in enumerate(data_list):
+                    item["conv_id"] = Path(item["path"]).stem
+                    item["predicted_emotion"] = all_answers[idx]
 
-            
+                df = pd.DataFrame(data_list)
+                df = df[['conv_id', 'input', 'target', 'predicted_emotion', 'path']]
+                df.columns = ['conv_id', 'text', 'emotion', 'predicted_emotion', 'audio_path']
+
+                export_path = Path(args.output_dir) / 'prediction_output.csv'
+                df.to_csv(export_path, index=False)
+                print(f"[{args.dataset}] Exported predictions CSV to: {export_path}")
 
     if not args.do_train and args.do_eval:
         # model starts to evaluation

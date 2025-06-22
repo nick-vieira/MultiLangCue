@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 scalers = {}
 
 def save_json(data, filename):
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         for _, row in data.iterrows():
             f.write(json.dumps({
                 'path': row['audio_path'],
@@ -19,7 +19,7 @@ def save_json(data, filename):
             }, ensure_ascii=False) + '\n')
 
 def scale_group(group):
-    cols = ['avg_pitch', 'pitch_std', 'avg_intensity']
+    cols = ['avg_pitch', 'pitch_std', 'avg_intensity', 'mean_hnr', 'intensity_variation', 'pitch_range']
 
     # Ensure all three columns exist and have valid numeric values
     if group[cols].isnull().any().any():
@@ -36,7 +36,7 @@ def scale_group(group):
     scaler = StandardScaler()
     try:
         scaled = scaler.fit_transform(group[cols])
-        if scaled.shape[1] != 3:
+        if scaled.shape[1] != len(cols):
             return group  # Skip if scaling result is unexpected
         group[cols] = scaled
         scalers[group.name] = {
@@ -48,6 +48,87 @@ def scale_group(group):
         return group
 
     return group
+
+
+def split_esd_mandarin(df: pd.DataFrame):
+    """
+    Deterministically create (train, test, valid) splits for ESD Mandarin.
+
+    For each (speaker_id, emotion) combination:
+      • evaluation/valid  = first 20 rows
+      • test              = next 30 rows
+      • train             = next 300 rows
+
+    Returns
+    -------
+    train_df, test_df, valid_df : pd.DataFrame
+    """
+
+    # 1. Sort by speaker, emotion, and file name / id so ordering is stable
+    sort_cols = ["speaker_id", "emotion"]
+    if "file_id" in df.columns:
+        sort_cols.append("file_id")            # keep numeric order if present
+    elif "file_path" in df.columns:
+        sort_cols.append("file_path")          # fall back to path name
+
+    ordered = df.sort_values(sort_cols, ascending=True).reset_index(drop=True)
+
+    # 2. Collect per‑group slices
+    valid_parts, test_parts, train_parts = [], [], []
+
+    for _, group in ordered.groupby(["speaker_id", "emotion"], sort=False):
+        # ensure deterministic row order within the group
+        group = group.reset_index(drop=True)
+
+        # Gracefully handle groups that may have fewer than the expected rows
+        valid_parts.append(group.iloc[:20])
+        test_parts.append(group.iloc[20:50])
+        train_parts.append(group.iloc[50:350])
+
+    # 3. Concatenate into three full DataFrames
+    valid_df = pd.concat(valid_parts, ignore_index=True)
+    test_df  = pd.concat(test_parts,  ignore_index=True)
+    train_df = pd.concat(train_parts, ignore_index=True)
+
+    return train_df, test_df, valid_df
+
+def generate_prose_prompt(pitch, pstd, ivar, hnr, intensity, emotion_set):
+    FEW_SHOT_EXAMPLES = (
+        # EMODB
+        # "Example 1:\n"
+        # "pitch=190.0, pitch_std=65.0, intensity_variation=13.0, mean_hnr=14.5, avg_intensity=72.0\n"
+        # "Prediction: This utterance is bright, smooth, and expressive — typical of HAPPINESS.\n\n"
+        # "Example 2:\n"
+        # "pitch=110.0, pitch_std=35.0, intensity_variation=9.0, mean_hnr=17.2, avg_intensity=60.0\n"
+        # "Prediction: This utterance is flat and low-pitched — typical of SADNESS.\n\n"
+        # "Example 3:\n"
+        # "pitch=165.0, pitch_std=50.0, intensity_variation=14.2, mean_hnr=11.0, avg_intensity=75.0\n"
+        # "Prediction: This utterance is harsh and intense — typical of ANGER.\n\n"
+
+        # ESD
+        "Example 1:\n"
+        "pitch=260.0, pitch_std=60.0, intensity_variation=21.0, mean_hnr=10.5, avg_intensity=69.0\n"
+        "Prediction: This utterance is sharp, volatile, and forceful — typical of ANGER..\n\n"
+        "Example 2:\n"
+        "pitch=270.0, pitch_std=65.0, intensity_variation=21.5, mean_hnr=13.2, avg_intensity=68.0\n"
+        "Prediction: This utterance is bright, lively, and resonant — typical of HAPPY.\n\n"
+        "Example 3:\n"
+        "pitch=175.0, pitch_std=38.0, intensity_variation=15.0, mean_hnr=14.1, avg_intensity=58.0\n"
+        "Prediction: This utterance is deep, flat, and soft — typical of SAD.\n\n"
+    )
+    
+    prose_prompt = (
+        "You are an expert in vocal emotion analysis. "
+        "Below are examples describing typical emotional expressions based on acoustic features.\n\n"
+        f"{FEW_SHOT_EXAMPLES}"
+        "Now analyze this:\n"
+        f"pitch={pitch:.2f}, pitch_std={pstd:.2f}, intensity_variation={ivar:.2f}, mean_hnr={hnr:.2f}, avg_intensity={intensity:.2f}\n"
+        "Please respond in this format:\n"
+        "Prediction: This utterance is ... — typical of <EMOTION>.\n"
+        "Prediction: This utterance is "
+    )
+
+    return prose_prompt
 
 def process_dataset(dataset, window=110, audio_description='True', audio_impression='False', audio_only='False', audio_context='False',experiments_setting='lora'):
     '''
@@ -61,11 +142,13 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         'iemocap':['happy', 'sad', 'neutral', 'angry', 'excited', 'frustrated'],
         'meld':   ['neutral', 'surprise', 'fear', 'sad', 'joyful', 'disgust', 'angry'],
         'emodb': ['anger', 'boredom', 'disgust', 'fear', 'happiness', 'sadness', 'neutral'],
+        'esd': ['anger', 'happy', 'sad', 'neutral', 'surprise'],
     }
     label_text_set = {
         'iemocap':'happy, sad, neutral, angry, excited, frustrated',
         'meld'   :'neutral, surprise, fear, sad, joyful, disgust, angry',
         'emodb': 'anger, boredom, disgust, fear, happiness, sadness, neutral',
+        'esd': 'anger, surprise, happy, sad, neutral',
     }
 
     ## load audio feature files
@@ -78,12 +161,13 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         iemocap_file = pd.read_csv('../data/IEMOCAP_full_release/iemocap_full_dataset.csv')
     elif dataset == 'emodb':
         audio_feature = pd.read_csv('../speech_features/processed_emodb_audio_features.csv')
-        # audio_feature = audio_feature[audio_feature['emotion'].isin(['sadness', 'neutral'])]
-        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
+        # audio_feature = audio_feature[audio_feature['emotion'].isin(['anger', 'neutral'])]
+    elif dataset == 'esd':
+        audio_feature = pd.read_csv('../speech_features/processed_esd_mandarin_features.csv')
     ###
-    
-    emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
-    # emotional_dict = {'anger': 0, 'neutral': 1}  # <- REDUCED LABEL SET
+
+    # emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+    emotional_dict = {'happy': 0, 'neutral': 1}  # <- REDUCED LABEL SET
     content_target_dict = {}
     content_task_dict = {}
     speaker_label_dict = {}
@@ -115,11 +199,12 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             speaker_label_dict[conv_id] = temp_speaker_list
 
     elif dataset == 'emodb':
-        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity'], inplace=True)
+        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity', 'mean_hnr', 'intensity_variation', 'pitch_range'], inplace=True)
         scaler = StandardScaler()
         # Sample fix to update normalization to speaker-specific
         audio_feature = audio_feature.groupby('speaker_id', group_keys=False).apply(scale_group)
-        # emotional_dict = {text_label:num_label for num_label, text_label in enumerate(label_set[dataset])}
+
+        # Single-class label text set reductions
         # label_text_set['emodb'] = 'anger, neutral'
         # label_text_set['emodb'] = 'sadness, neutral'
         # label_text_set['emodb'] = 'happiness, neutral'
@@ -127,7 +212,7 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         content_task_dict = {}
         audio_path_dict = {}
         
-        # Process EmoDB dataset
+        # Process dataset
         data_list = []
         prose_count = 0
         
@@ -138,53 +223,24 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
             prose_rule = ""
             speaker_id = row['speaker_id']
 
-            if (
-                pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
-                row['avg_intensity'] * scalers[speaker_id]['scale'][2] + scalers[speaker_id]['scale'][2] > 70 and
-                row['avg_pitch'] * scalers[speaker_id]['scale'][0] + scalers[speaker_id]['scale'][0] >= 240
-            ):
-                prose_rule = "This utterange is noticeably louder and higher in pitch than a neutral expression, which in German often signals anger.\n"
-                prose_count += 1
+            scale = scalers[speaker_id]['scale']
+            mean = scalers[speaker_id]['mean']
 
-            elif (
-                pd.notna(row.get('avg_pitch')) and pd.notna(row.get('avg_intensity')) and
-                row['avg_intensity'] * scalers[speaker_id]['scale'][2] + scalers[speaker_id]['scale'][2] > 70 and
-                row['avg_pitch'] * scalers[speaker_id]['scale'][0] + scalers[speaker_id]['scale'][0] >= 145
-            ):
-                prose_rule = "This utterange is noticeably louder but lower in pitch than a neutral expression, which in German often signals sadness.\n"
-                prose_count += 1
+            hnr = row['mean_hnr'] * scale[3] + mean[3]
+            ivar = row['intensity_variation'] * scale[4] + mean[4]
+            pitch = row['avg_pitch'] * scale[0] + mean[0]
+            pstd = row['pitch_std'] * scale[1] + mean[1]
+            intensity = row['avg_intensity'] * scale[2] + mean[2]
 
-            # text = (
-            #     "Now you are an expert in sentiment and emotional analysis using only audio features.\n"
-            #     f"Audio file: {row['filename']}\n"
-            #     f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
-            #     f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
-            #     f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
-            # )
-            text = (
-                f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
-                f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
-                f"{prose_rule}"
-                f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            prose_prompt = generate_prose_prompt(
+                pitch, pstd, ivar, hnr, intensity, 'anger, happiness, and sadness'
             )
 
-            # if audio_description == 'True':
-            #     description = row.get('description', '')
-            #     text += f'Description: {description}\n'
-
-            # if audio_impression == 'True':
-            #     impression = row.get('impression', '')
-            #     text += f'Impression: {impression}\n'
-
-            # text += f'Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n'
-
-            # for conv_id in all_conv_id:
-            #     data_list.append({
-            #         'conv_id': conv_id,
-            #         'text': text,
-            #         'emotion': emotion_label,
-            #         'audio_path': row['filename']
-            #     })
+            text = prose_prompt + "\n" + (
+                # f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
+                # f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+                f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            )
         
             data_list.append({
                 'conv_id': row['filename'].split('.')[0],
@@ -200,8 +256,12 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         train_data, test_valid = train_test_split(data_df, test_size=0.2, stratify=data_df['emotion'], random_state=42)
         test_data, valid_data = train_test_split(test_valid, test_size=0.5, stratify=test_valid['emotion'], random_state=42)
 
-        # data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
+        # Prose rule evaluation
         data_path = f'../PROCESSED_DATASET/{dataset}/cleaned/no_leakage'
+
+        # No prose rule evaluation 
+        # data_path = f'../PROCESSED_DATASET/{dataset}/cleaned/no_leakage_no_prose'
+        
         os.makedirs(data_path, exist_ok=True)
 
         save_json(train_data, os.path.join(data_path, 'train.json'))
@@ -217,6 +277,91 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
 
         return data_path
     # Process the utterances in the conversation, where 'index_w' is used to handle the starting index under the window size setting.
+
+    elif dataset == 'esd':
+        audio_feature.dropna(subset=['avg_pitch', 'pitch_std', 'avg_intensity', 'mean_hnr', 'intensity_variation', 'pitch_range'], inplace=True)
+        scaler = StandardScaler()
+        audio_feature = audio_feature.groupby('speaker_id', group_keys=False).apply(scale_group)
+
+        # Single-class label text set reductions
+        # label_text_set['esd'] = 'anger, neutral'
+        # label_text_set['esd'] = 'sad, neutral'
+        label_text_set['esd'] = 'happy, neutral'
+    
+        content_target_dict = {}
+        content_task_dict = {}
+        audio_path_dict = {}
+        
+        # Process dataset
+        data_list = []
+        prose_count = 0
+        
+        for idx, row in audio_feature.iterrows():
+            all_conv_id = row['filename'].split('.')[0]
+            emotion_label = row['emotion'].lower()
+
+            prose_rule = ""
+            speaker_id = row['speaker_id']
+
+            scale = scalers[speaker_id]['scale']
+            mean = scalers[speaker_id]['mean']
+
+            hnr = row['mean_hnr'] * scale[3] + mean[3]
+            ivar = row['intensity_variation'] * scale[4] + mean[4]
+            pitch = row['avg_pitch'] * scale[0] + mean[0]
+            pstd = row['pitch_std'] * scale[1] + mean[1]
+            intensity = row['avg_intensity'] * scale[2] + mean[2]
+
+            # prose_prompt = generate_prose_prompt(
+            #     pitch, pstd, ivar, hnr, intensity, 'anger, happiness, and sadness'
+            # )
+
+            # text = prose_prompt + "\n" + (
+            #     # f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
+            #     # f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+            #     f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            # )
+
+            text = (
+                f"Pitch: {row.get('avg_pitch', 'unknown')}, Variation: {row.get('pitch_std', 'unknown')}, "
+                f"Intensity: {row.get('avg_intensity', 'unknown')}\n"
+                f"Please classify the emotional label of this utterance from <{label_text_set[dataset]}>.\n"
+            )
+        
+            data_list.append({
+                'conv_id': row['filename'].split('.')[0],
+                'text': text,
+                'emotion': emotion_label,
+                'audio_path': row['filename'],
+                'speaker_id': speaker_id
+            })
+
+        # Convert to DataFrame
+        data_df = pd.DataFrame(data_list)
+
+        # Stratified split
+        train_data, test_data, valid_data = split_esd_mandarin(data_df)
+
+        # Prose rule evaluation
+        # data_path = f'../PROCESSED_DATASET/{dataset}/cleaned/no_leakage'
+
+        # No prose rule evaluation 
+        data_path = f'../PROCESSED_DATASET/{dataset}/cleaned/no_leakage_no_prose'
+        
+        os.makedirs(data_path, exist_ok=True)
+
+        save_json(train_data, os.path.join(data_path, 'train.json'))
+        save_json(test_data, os.path.join(data_path, 'test.json'))
+        save_json(valid_data, os.path.join(data_path, 'valid.json'))
+
+        # Plot histogram
+        plt.hist(data_df['text'].apply(len), bins=20)
+        plt.xlabel('Length of the input text')
+        plt.ylabel('Frequency')
+        plt.title('Histogram of the length of the input text')
+        plt.savefig(os.path.join(data_path, 'histogram.png'))
+
+        return data_path
     
     for conv_id in all_conv_id:
         if conv_id==125:
@@ -390,19 +535,19 @@ def process_dataset(dataset, window=110, audio_description='True', audio_impress
         data_path = f'../PROCESSED_DATASET/{dataset}/window/{audio_description}_{audio_impression}'
     os.makedirs(data_path, exist_ok=True)
 
-    with open(f'{data_path}/train.json', 'w') as f_train:
+    with open(f'{data_path}/train.json', 'w', encoding='utf-8') as f_train:
         for train_id in new_train_id:
             if train_id.split('_')[0]=='125':
                 continue
             f_train.write(json.dumps({'path': audio_path_dict[train_id], \
             'input':f'{content_task_dict[train_id]}','target':f'{content_target_dict[train_id]}'}, ensure_ascii=False)+ '\n')
 
-    with open(f'{data_path}/test.json', 'w') as f_test:
+    with open(f'{data_path}/test.json', 'w', encoding='utf-8') as f_test:
         for test_id in new_test_id:
             f_test.write(json.dumps({'path': audio_path_dict[test_id],\
             'input':f'{content_task_dict[test_id]}','target':f'{content_target_dict[test_id]}'}, ensure_ascii=False)+ '\n')
 
-    with open(f'{data_path}/valid.json', 'w') as f_valid:
+    with open(f'{data_path}/valid.json', 'w', encoding='utf-8') as f_valid:
         for valid_id in new_valid_id:
             if valid_id.split('_')[0]=='1149':
                 continue
@@ -436,3 +581,17 @@ processed_data_path = process_dataset(dataset=args.dataset, window=args.historic
 
 print(processed_data_path)
 
+# # Adjust this path to your actual test split path
+# json_path = "../PROCESSED_DATASET/emodb/cleaned/no_leakage/test.json"
+
+# # Load the JSON lines
+# df = pd.read_json(json_path, lines=True)
+
+# # Count how many inputs include prose rules (look for "This utterance")
+# prose_examples = df[df['input'].str.contains("This utterance")]
+# print(f"Total inputs: {len(df)}")
+# print(f"Inputs with prose rules: {len(prose_examples)}")
+# print(f"Percentage with prose: {100 * len(prose_examples)/len(df):.2f}%")
+
+# # Optionally view some examples
+# print(prose_examples.sample(3)['input'].values)
