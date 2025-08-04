@@ -18,10 +18,10 @@ Experiments_setting='lora'
 # Experiments_setting='all_parameters'
 
 #  ------ select the dataset ------ 
-# dataset='iemocap'
+dataset='iemocap'
 # dataset='meld'
 # dataset='emodb'
-dataset='esd'
+# dataset='esd'
 
 # ------  prompt input format setting ------ 
 audio_description='False'
@@ -94,7 +94,8 @@ esac
 
 if [ ${FLAG} = 1 ]
 then
-    DATA_PATH=$(python3 data_process.py --dataset ${dataset} \
+    # DATA_PATH=$(python3 data_process_manual.py --dataset ${dataset} \
+    DATA_PATH=$(python3 data_process_auto.py --dataset ${dataset} \
         --historical_window ${historical_window} \
         --audio_description ${audio_description} \
         --audio_impression ${audio_impression} \
@@ -116,10 +117,12 @@ then
     then
         # MAX_LENGTH=1200
         MAX_LENGTH=2500
+        MAX_SEQ_LENGTH=512
     elif [ ${dataset} = 'meld' ]
     then
         #MAX_LENGTH=1024
         MAX_LENGTH=1500
+        MAX_SEQ_LENGTH=512
     elif [ ${dataset} = 'emodb' ]
     then
         #MAX_LENGTH=1024
@@ -238,7 +241,7 @@ then
         --dataset ${dataset} \
         --model_name_or_path ${MODEL_PATH} \
         --data_dir ${DATA_PATH} \
-        --output_dir ../experiments/${MODEL_NAME}/${Experiments_setting}/${dataset}/window_${historical_window}/LR_${LR}_BS_${BS}_per_${data_percent}_${task}_class5_${SEED} \
+        --output_dir ../experiments/${MODEL_NAME}/${Experiments_setting}/${dataset}/window_${historical_window}/LR_${LR}_BS_${BS}_per_${data_percent}_${task}_class7_${SEED} \
         --max_length ${MAX_LENGTH} \
         --batch_size ${BS} \
         --deepspeed_config ../LLM_code/data_utils/deepspeed_config.json \
@@ -261,6 +264,8 @@ then
         --top_k 1 \
         --top_p 1.0 \
         --temp 0.0 \
+        --zero_shot False \
+        # --checkpoint_dir ${CHECKPOINT_DIR} \
         # --beta $BETA \
         # --theta $THETA
     fi  
